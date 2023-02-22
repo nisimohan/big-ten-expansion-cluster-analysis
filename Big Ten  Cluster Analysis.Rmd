@@ -1,0 +1,687 @@
+---
+title: "DSCI 300 Mini  Project 4 - Cluster Analysis"
+author: "Nisi Mohan Kuniyil 300321388"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+
+
+```{r, echo=FALSE}
+
+library(ggpubr)
+library(pixmap)
+library(ggplot2)
+library(dplyr)
+library(gapminder)
+library(graphics)
+library(ggcorrplot)
+library(magrittr)
+library(scales)
+library(tidyverse)
+library(hrbrthemes)
+library(viridis)
+library(dataMaid)
+library(countrycode)
+library(reshape)
+library(reshape2)
+library(janitor)
+```
+
+
+
+
+
+# Tidying Data
+
+
+**Read only first 5 rows from BigTenexpand.csv, since there are two sets of**
+**data in single csv.**
+
+```{r}
+
+set.seed(42)
+University_49 <- read.csv("BigTenexpand.csv", nrows = 5 )
+
+head(University_49)
+
+```
+
+
+**Remove the extra column "i..candidates" from the imported dataset University_49** 
+
+
+```{r}
+University_49 <- University_49[, -1]
+head(University_49)
+
+```
+
+
+**Get the transpose of the dataframe "University_49"**
+
+
+
+```{r}
+
+University_49 <- data.frame(t(University_49))
+head(University_49)
+
+```
+**Create a new column name and assign the first column values to this "newcol" **
+
+
+```{r}
+
+
+University_49 <- cbind(newcol = rownames(University_49), University_49)
+rownames(University_49) <- 1:nrow(University_49)
+
+head(University_49)
+
+```
+
+
+
+**Remove the first row from the new dataset "Univeristy_49" **
+
+
+```{r}
+
+University_49 <- University_49%>%
+  row_to_names(row_number = 1)
+head(University_49)
+
+```
+
+**There are lot of extra rows got added after clean up, remove those extra rows.**
+
+```{r}
+# removing rextra rows
+
+University_49 <- head(University_49, 49)
+head(University_49)
+```
+
+
+**Big Ten Schools importing.**
+
+```{r}
+
+BigTenUniversity <- read.csv("BigTenExpand.csv", skip = 7)[,1:2]
+head(BigTenUniversity)
+
+```
+
+**The dataset needs to be changed to wide format, in order to do this we need a** 
+**unique id for each group. For this creating a new column to use in reshaping.**
+
+
+```{r}
+#adding a dummy vector to get a unique column for long to wide
+vector_col <-  vector(mode = "integer", length = 60)
+for(i in seq_len(length(vector_col)-1)){
+  
+  vector_col[i+1] <- floor(i/6)
+  
+}
+
+vector_col
+
+```
+
+
+
+**combining this vector with our datset**
+
+```{r}
+
+#cbind 
+
+BigTenUniversity <- cbind(BigTenUniversity, vector_col)
+
+head(BigTenUniversity)
+```
+**Using reshape, changing to wide format from long.**
+
+
+```{r}
+#changing to wide format from long
+BigTenUniversity <- reshape(BigTenUniversity, timevar = "Big.Ten", 
+                            idvar = "vector_col", direction = "wide")
+head(BigTenUniversity)
+```
+
+
+**Rename the column names same as the dataset "University_49".**
+
+
+```{r}
+ColumnNames <- c("vector_col","School", "StadiumCapacity","Latitude",
+                 "Longitude","Endowment ($000)","Enrollment")
+
+colnames(BigTenUniversity) <- ColumnNames 
+
+```
+
+```{r}
+
+BigTenUniversity
+```
+
+
+
+
+**Creating index as school names**
+
+
+```{r}
+
+BigTenUniversity <- BigTenUniversity[, -1]
+rownames(BigTenUniversity) <- NULL
+BigTenUniversity <- column_to_rownames(BigTenUniversity, "School")
+BigTenUniversity
+```
+\newpage
+
+1.Using Euclidean distance to measure dissimilarity between observations,
+determine which school (in its own cluster of one) that hierarchical clustering 
+with complete linkage would recommend integrating into the Big Ten Conference.
+That is, which school is the most similar with respect to complete linkage
+to the cluster of ten schools that were members of the Big Ten from 1946 
+to 1990?
+
+
+
+
+**Take average of BigTen universities and add this as a fake college in**
+**the dataset "University_49"**
+
+
+
+```{r}
+ColumnNames <- c("StadiumCapacity","Latitude","Longitude",
+                 "Endowment ($000)","Enrollment")
+
+BigTenUniversity[ColumnNames] <- sapply(BigTenUniversity[ColumnNames],
+                                        as.numeric)
+sapply(BigTenUniversity, class)
+
+```
+
+**Taking the mean of BigTenUniversity**
+
+```{r}
+BigTen_mean <- colMeans(BigTenUniversity)
+BigTen_mean
+```
+**Appending name to it inorder to add that in University_49**
+
+```{r}
+BigTen_mean <- append(BigTen_mean, "BigTen", 0)
+BigTen_mean
+```
+
+**adding a new row BigTen**
+
+
+```{r}
+University_50 <- rbind(University_49, BigTen_mean)
+tail(University_50)
+```
+
+**converting columns from char to double**
+
+```{r,echo= FALSE}
+#converting to numeric, univerisity with 50 colleges
+University_50[ColumnNames] <- sapply(University_50[ColumnNames],as.numeric)
+tail(University_50)
+```
+
+**Converting column "School" to rownames**
+
+```{r}
+rownames(University_50) <- NULL
+University_50 <- column_to_rownames(University_50, "School")
+tail(University_50)
+```
+
+**clustering methord to figure out the distance b/w each college and cluster**
+**based on the farthest distance.**
+
+```{r}
+
+maximum_dist <- dist(University_50, method = "maximum")
+maximum_dist
+```
+
+**School closer to the BigTen**
+
+```{r}
+
+maximum_dist <- as.matrix(maximum_dist)
+which.min(maximum_dist["BigTen", -50])
+min(maximum_dist["BigTen",-50])
+
+
+```
+
+**We got Missouri as our first school which is similar to Big Ten**
+
+
+
+\newpage
+
+
+2.Add the single school identified in (1) to create a cluster of 11 schools 
+representing a hypothetical BigTen Conference. Repeat the calculations to 
+identify the school most similar with respect to complete linkage to this
+new cluster of 11 schools.
+
+
+
+**Adding Missouri to BigTenUniversity dataframe**
+```{r}
+
+
+BigElevenUniversity <- rbind(BigTenUniversity, University_50["Missouri",])
+BigElevenUniversity
+
+```
+**Take average of BigElevenUniveristy**
+```{r}
+
+BigEleven_mean <- colMeans(BigElevenUniversity)
+BigEleven_mean
+
+```
+```{r}
+BigEleven_mean <- append(BigEleven_mean, "BigEleven", 0)
+BigEleven_mean
+```
+
+**Removing Missouri from University_49 and adding BigEleven**
+```{r}
+University_48 <- University_49 %>% filter(School != "Missouri")
+head(University_48)
+```
+**Adding BigElevenMean to University_48**
+
+```{r}
+University_49 <- rbind(University_48, BigEleven_mean)
+rownames(University_49) <- NULL
+University_49 <- column_to_rownames(University_49, "School")
+tail(University_49)
+```
+```{r}
+University_49[ColumnNames] <- sapply(University_49[ColumnNames], as.numeric)
+tail(University_49)
+```
+
+
+```{r}
+
+maximum_dist <- dist(University_49, method = "maximum")
+#maximum_dist
+```
+
+School closer to the BigTen
+
+```{r}
+
+maximum_dist <- as.matrix(maximum_dist)
+
+#colnames(maximum_dist)
+
+which.min(maximum_dist["BigEleven", -49])
+min(maximum_dist["BigEleven",-49])
+
+```
+
+**We got Iowa.State as our second school which is similar to Big Ten**
+
+
+\newpage
+
+3.Add the school identified in (2) to create a cluster of 12 schools 
+representing a hypothetical Big Ten Conference. Repeat the calculations to 
+identify the school most similar with respect to complete linkage
+to this new cluster of 12 schools.
+
+
+**Adding Iowa.State to BigElevenUniversity dataframe**
+```{r}
+
+
+BigTwelveUniversity <- rbind(BigElevenUniversity, University_49["Iowa.State",])
+BigTwelveUniversity
+
+```
+
+**Finding mean of BigTwelveUniverisity**
+
+
+```{r}
+
+BigTwelve_mean <- colMeans (BigTwelveUniversity)
+BigTwelve_mean
+
+```
+
+
+
+```{r}
+BigTwelve_mean <- append(BigTwelve_mean, "BigTwelve", 0)
+BigTwelve_mean
+```
+
+
+**Removing Iowa.State from University_48**
+
+```{r}
+University_47 <- University_48 %>% filter(School != "Iowa.State")
+head(University_47)
+```
+**Adding BigTwelveMean to University_47**
+
+```{r}
+University_48 <- rbind(University_47, BigTwelve_mean)
+rownames(University_48) <- NULL
+University_48 <- column_to_rownames(University_48, "School")
+tail(University_48)
+```
+
+**Again typecasting to double**
+
+```{r}
+University_48[ColumnNames] <- sapply(University_48[ColumnNames], as.numeric)
+head(University_48)
+```
+
+
+```{r}
+
+maximum_dist <- dist(University_48, method = "maximum")
+#maximum_dist
+```
+
+School closer to the BigTen
+
+```{r}
+
+maximum_dist <- as.matrix(maximum_dist)
+
+#colnames(maximum_dist)
+
+which.min(maximum_dist["BigTwelve", -48])
+min(maximum_dist["BigTwelve",-48])
+
+```
+
+**We got Kansas as our third school.**
+
+
+\newpage
+
+
+4.Add the school identified in (3) to create a cluster of 13 schools 
+representing a hypothetical Big Ten Conference. Repeat the calculations 
+to identify the school most similar with respect to complete linkage
+to this new cluster of 13 schools. Add this school to create a 14-school cluster.
+
+**Adding Kansas to BigTwelveUniversity dataframe**
+```{r}
+
+
+BigThirteenUniversity <- rbind(BigTwelveUniversity, University_48["Kansas",])
+tail(BigThirteenUniversity)
+
+```
+**Finding mean of BigThirteenUniverisity**
+
+
+```{r}
+
+BigThirteen_mean <- colMeans(BigThirteenUniversity)
+BigThirteen_mean
+
+```
+
+
+
+```{r}
+BigThirteen_mean <- append(BigThirteen_mean, "BigThirteen", 0)
+BigThirteen_mean
+```
+
+**Removing Kansas from University_48**
+
+```{r}
+University_46 <- University_47 %>% filter(School != "Kansas")
+head(University_46)
+```
+
+
+
+
+**Adding BigTwelveMean to University_47**
+
+```{r}
+University_47 <- rbind(University_46, BigThirteen_mean)
+rownames(University_47) <- NULL
+University_47 <- column_to_rownames(University_47, "School")
+tail(University_47)
+
+```
+ **Typecasting to *double**
+
+```{r}
+University_47[ColumnNames] <- sapply(University_47[ColumnNames], as.numeric)
+head(University_47)
+```
+
+```{r}
+
+maximum_dist <- dist(University_47, method = "maximum")
+#maximum_dist
+```
+
+School closer to the BigTen
+
+```{r}
+
+maximum_dist <- as.matrix(maximum_dist)
+
+#colnames(maximum_dist)
+
+which.min(maximum_dist["BigThirteen", -47])
+min(maximum_dist["BigThirteen",-47])
+
+```
+
+
+Adding Kentucky to BigThirteenUniveristy dataframe
+```{r}
+
+
+Big14University <- rbind(BigThirteenUniversity, University_47["Kentucky",])
+tail(Big14University)
+
+```
+**We got our 4th school, kentucky**
+
+
+\newpage
+
+5. How does the hypothetical 14-team cluster created in (4) compare to the 
+actual 14-team Big Ten Conference? For both the hypothetical 14-team Big Ten
+Conference and the actual 14-team Big Ten Conference, compute the cluster
+centroid, the distance from each cluster member to the cluster centroid,
+and average distance between the observations in the cluster.
+What do you observe when comparing these two clusters? 
+Which cluster has the smaller average distance between observations? Is this
+surprising? Explain.
+
+
+
+**First take Penn.State,Nebraska,Maryland, and Rutgers to BigTenUniversity and**
+**make a actual BigTenUniveristy.**
+```{r}
+
+
+Actual_Big14Univ <- rbind(BigTenUniversity, 
+                     University_47[c("Penn.State","Nebraska",
+                                     "Maryland","Rutgers"),])
+Actual_Big14Univ
+
+```
+**Get the mean of hypothetical and actual Big 14 Universities.**
+
+```{r}
+ActualBig14_mean <- colMeans(Actual_Big14Univ)
+ActualBig14_mean
+class(ActualBig14_mean)
+
+```
+
+
+
+```{r}
+HypotheticalBig14_mean <- colMeans(Big14University)
+HypotheticalBig14_mean
+class(HypotheticalBig14_mean)
+```
+
+**Append ActualBig14_mean and hypotheticalBig14_mean to respective data frames.**
+
+
+```{r}
+Actual_Big14Univ <- rbind(Actual_Big14Univ, ActualBig14_mean)
+
+```
+
+```{r}
+rownames(Actual_Big14Univ)[15]<-"Actual_centroid"
+Actual_Big14Univ
+```
+
+
+```{r}
+Hypothetical_Big14Univ <- rbind(Big14University, HypotheticalBig14_mean)
+rownames(Hypothetical_Big14Univ)[15]<-"Hypothetical_centroid"
+Hypothetical_Big14Univ
+```
+**Computing the distance from each cluster member to the centroid of actual**
+**big 14 universities.**
+
+```{r}
+
+maximum_dist <- dist(Actual_Big14Univ, method = "euclidian")
+#maximum_dist
+```
+
+
+```{r}
+
+maximum_dist <- as.matrix(maximum_dist)
+maximum_dist["Actual_centroid",-15]
+
+AverageDistance_Actual <- mean(maximum_dist["Actual_centroid",-15])
+AverageDistance_Actual
+
+```
+
+
+**Computing the distance from each cluster member to the centroid of**
+**hypothetical big 14 universities.**
+
+```{r}
+
+maximum_dist <- dist(Hypothetical_Big14Univ, method = "euclidian")
+# maximum_dist
+```
+
+
+```{r}
+
+maximum_dist <- as.matrix(maximum_dist)
+maximum_dist["Hypothetical_centroid",-15]
+
+AverageDistance <-mean(maximum_dist["Hypothetical_centroid",-15])
+AverageDistance
+```
+
+
+
+
+## Observations about Actual 14-team cluster and Hypothetical 14-team cluster
+
+### Hypothetical Big Ten
+
+  * Hypothetical Big ten is formed by finding the nearest schools in vector 
+    space to the original Big Ten. Missouri, Iowa.State, kansas, and Kentucky 
+    are the schools added to the original Big Ten Schools.   
+    
+  * The centroid of the 14- team cluster is 0.74241125, 0.64506026, -0.63065174
+    0.58001582, 0.984887328	with respect to "StadiumCapacity","Latitude",
+    "Longitude", "Endowment ($000)","Enrollment".   
+    
+  * The average distance between the observations in the cluster is 1.773114
+
+  
+### Actual Big Ten
+
+  * Actual 14- team Big Ten is formed by adding  "Penn.State","Nebraska",
+    "Maryland", "Rutgers" to the original Big Ten schools  during the years
+    1990-2014.    
+    
+  * The centroid of the actual 14 team school is 0.89840478, 0.71634130, 
+    -0.16645063,	0.60267129, 1.1694306 with respect to "StadiumCapacity",
+    "Latitude", "Longitude", "Endowment ($000)","Enrollment".   
+    
+  * The average distance between the observatiobs in the cluster is 1.934058.
+  
+  
+### Stadium Capacity
+
+  The stadium capacity of hypothetical cluster is approximatly 0.74 standard 
+  deviation away from the mean, whereas the actual cluster is approximatly 0.90 
+  standard deviation from the mean, which tells us that the stadium capacity for
+  actual 14 team cluster is higher.   
+  
+  
+### Endowment 
+
+  The Endowment of the hypothetical cluster is around 0.58 standard deviation 
+  away from the mean and the actual cluster is 0.61 standard deviation away from
+  the mean. This also conclude that the actual cluster has more funding than the
+  hypothetical.
+  
+  
+### Enrollment
+
+  The hypothetical cluster has a lower enrollment(0.98 standard deviation away
+  from the mean) compared to the actual 14-team cluster(1.30 standard deviation
+  away from the mean). 
+  
+  
+### Conclusion  
+  
+  The hypothetical cluster has the smaller average distance(1.77) between 
+  observations compared to the actual cluster(1.93). It is surprising to see
+  the actual cluster more spread than the hypothetical cluster. It indicates
+  that the four schools added between 1990 to 2014 were not the most similar
+  schools to the original Big Ten as found in the cluster analysis.
+  
+  
+   
+
+
+
